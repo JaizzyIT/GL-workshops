@@ -32,6 +32,12 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define DELAY_STEP 2
+#define DELAY_MAX 100
+#define DELAY_MIN 1
+#define TRUE 1
+#define FALSE 0
+#define NUM_OF_LEDS 4
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -42,13 +48,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-#define DELAY_STEP 2
-#define DELAY_MAX 100
-#define DELAY_MIN 1
-#define TRUE 1
-#define FALSE 0
-#define NUM_OF_LEDS 4
-
 uint16_t ledSelect[NUM_OF_LEDS] = {LED_GREEN_Pin, LED_ORANGE_Pin, LED_RED_Pin, LED_BLUE_Pin};
 uint16_t currentDelay;
 uint8_t currentLED;
@@ -104,13 +103,14 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* USER CODE END WHILE */
-	  //consecutive light up the LEDs
+
+	  //consecutive light up one LED
 	  for(uint8_t i = 0; i < NUM_OF_LEDS; i++){
 		  if (i != currentLED) HAL_GPIO_WritePin(GPIOD, ledSelect[i], GPIO_PIN_RESET);
 		  else HAL_GPIO_WritePin(GPIOD, ledSelect[i], GPIO_PIN_SET);
 	  	  }
-	  //move to next LED
+
+	  //moving to next LED
 	  if (currentLED < NUM_OF_LEDS) currentLED++;
 	  else currentLED = 0;
 
@@ -125,6 +125,8 @@ int main(void)
 	  	  }
 
 	  HAL_Delay(currentDelay);
+
+	/* USER CODE END WHILE */
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
