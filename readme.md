@@ -1,6 +1,6 @@
 # GL-workshops  
 *Link to videos: [GoogleDrive](https://drive.google.com/drive/folders/1N6_LGeXfZefZ2izT5ZKz3xPsAGWl0FHN?usp=sharing)*  
-
+  
 ## **Training01**  
 `Four consecutive blinking LEDs with cyclically changing delay.`  
 	* used HAL_GPIO_WritePin and HAL_Delay functions.   
@@ -15,6 +15,7 @@
 	* CENTER button used to suspend/restore program executing and switching CPU to/from sleep mode.  
 ## **Training03**  
 `PWM generator with adjustable frequency and duty cycle using hardware timer TIM4 all channes (ch1, ch2, ch3, ch4)`  
+  
 	* frequency range is 5-100 kHz with 5kHz step, start value is 50 kHz. For adjusting used buttons UP/DOWN;  
 	* duty cycle range is 0-100% with 5% step, start value is 50%. For adjusting used buttons LEFT/RIGHT;  
 	* cyclically switching PWM channels (ch1, ch2, ch3, ch4, no output) via CENTER button;  
