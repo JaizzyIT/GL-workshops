@@ -19,7 +19,7 @@
 	* duty cycle range is 0-100% with 5% step, start value is 50%. For adjusting used buttons LEFT/RIGHT;  
 	* cyclically switching PWM channels (ch1, ch2, ch3, ch4, no output) via CENTER button;  
 	* PWM channels configured to be connected to PD12, PD13, PD14, PD15 port outputs;  
-## **Training04**
+## **Training04**  
 
 
 
