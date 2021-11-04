@@ -37,10 +37,20 @@
 #define LED_ORANGE_PWM htim4.Instance->CCR2
 #define LED_RED_PWM htim4.Instance->CCR3
 #define LED_BLUE_PWM htim4.Instance->CCR4
+#define LED_RED_WARN_PERIOD htim10.Instance->ARR
 
-#define VREF 2930
+#define WARN_BLINK_1_FREQ 10						// Hz*10
+#define WARN_BLINK_2_FREQ 25						// Hz*10
+#define WARN_BLINK_3_FREQ 50						// Hz*10
 
+#define ADC_RESOLUTION 4095
+#define VREF 3000
 #define AVR_BUFF_SIZE 8
+#define V_EXT_T_SENS_0 2020							//mV - external sensor voltage at 0 degrees Celsius
+#define V_EXT_T_SENS_100 20							//mV - external sensor voltage at 100 degrees Celsius
+#define V25 760										//mV - datasheet value for 25° C (internal temperature sensor)
+#define AVG_SLOPE 2.5								//mV/°C - average slope (internal temperature sensor)
+
 
 #define TRUE 1
 #define FALSE 0
@@ -57,12 +67,26 @@ ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
 TIM_HandleTypeDef htim4;
+TIM_HandleTypeDef htim10;
 
 /* USER CODE BEGIN PV */
+volatile uint8_t newADCData;
+
+uint32_t carrierFreq;
+
 uint16_t adcData[3];
 uint16_t potADCAvrBuff[AVR_BUFF_SIZE], ExtTempAvrBuff[AVR_BUFF_SIZE], intTempAvrBuff[AVR_BUFF_SIZE];
-uint16_t potADCVal, extTempVal, intTempVal;
-uint8_t newADCData;
+uint16_t potADCVal, extTempADCVal, intTempADCVal;
+uint16_t potVolts, extTempDegree, intTempDegree;
+uint16_t extTempVolts, intTempVolts;
+
+const uint16_t potPosMax = VREF, potPosMin = 0;			//mV
+const uint16_t extTempMax = 100, extTempMin = 0;		//°C
+const uint16_t intTempMax = 100, intTempMin = 0;		//°C
+
+const uint16_t potPosWarnHI = 1000;						// mV
+const uint16_t extTempWarHI = 29;						// %
+const uint16_t intTempWarHI = 32;						// %
 
 enum {
 	POTENTIOMETER,
@@ -77,24 +101,30 @@ static void MX_GPIO_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_TIM10_Init(void);
 /* USER CODE BEGIN PFP */
 void updateAverageValue(void);
+void updatePWM(void);
+void adcDataConvert(void);
+void alarmBlink(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	HAL_GPIO_TogglePin(GPIOD, LED_RED_Pin);
+}
+
 
 int _write(int file, char* ptr, int len) {
 	int i = 0;
-	for (i = 0; i<len; i++)
-		ITM_SendChar(*ptr++);
+	for (i = 0; i<len; i++) ITM_SendChar(*ptr++);
 	return len;
 }
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
-	  updateAverageValue();
 		newADCData = TRUE;
-
 }
 
 void updateAverageValue(void){
@@ -104,17 +134,75 @@ void updateAverageValue(void){
 	ExtTempAvrBuff[currentAvrElement] = adcData[EXT_TEMP_SENSOR];
 	intTempAvrBuff[currentAvrElement] = adcData[INT_TEMP_SENSOR];
 
-	currentAvrElement = (currentAvrElement > (AVR_BUFF_SIZE - 1)) ? 0 : (currentAvrElement + 1);
+	currentAvrElement = (currentAvrElement >= (AVR_BUFF_SIZE - 1)) ? 0 : (currentAvrElement + 1);
 
-	for (uint8_t i = 0; i < (AVR_BUFF_SIZE - 1); i++){
+	potADCVal = 0;
+	extTempADCVal = 0;
+	intTempADCVal = 0;
+
+	for (uint8_t i = 0; i < AVR_BUFF_SIZE ; i++){
 		potADCVal += potADCAvrBuff[i];
-		extTempVal += ExtTempAvrBuff[i];
-		intTempVal += intTempAvrBuff[i];
+		extTempADCVal += ExtTempAvrBuff[i];
+		intTempADCVal += intTempAvrBuff[i];
 	}
 
 	potADCVal = potADCVal >> 3;
-	extTempVal = extTempVal >> 3;
-	intTempVal = intTempVal >> 3;
+	extTempADCVal = extTempADCVal >> 3;
+	intTempADCVal = intTempADCVal >> 3;
+}
+
+uint16_t limitsCheck(const uint16_t* const val, const uint16_t* const max, const uint16_t* const min){
+	if (*val > *max) return *max;
+	if (*val < *min) return *min;
+	else return *val;
+}
+
+void updatePWM(void){
+	LED_BLUE_PWM = potVolts * PWM_PERIOD / VREF;
+	LED_GREEN_PWM = limitsCheck(&extTempDegree, &extTempMax, &extTempMin) * PWM_PERIOD / extTempMax;
+	LED_ORANGE_PWM = limitsCheck(&intTempDegree, &intTempMax, &intTempMin)  * PWM_PERIOD / intTempMax;
+}
+
+
+void adcDataConvert(void){
+	/*Potentiometer: discrete to volts*/
+	potVolts = VREF * potADCVal / ADC_RESOLUTION;
+	/*External temperature sensor: discrete to volts and to degrees*/
+	extTempVolts = VREF * extTempADCVal / ADC_RESOLUTION;
+	extTempDegree = extTempMax - ((extTempVolts - V_EXT_T_SENS_100) * extTempMax / (V_EXT_T_SENS_0 - V_EXT_T_SENS_100)) + extTempMin;
+	/*Internal temperature sensor: discrete to volts and to degrees*/
+	intTempVolts = VREF * intTempADCVal / ADC_RESOLUTION;
+	intTempDegree = ((intTempVolts - V25) / AVG_SLOPE) + 25;
+}
+
+void alarmBlink(void){
+	uint8_t warning = 0;
+
+	LED_RED_WARN_PERIOD = 0;
+
+	if (potVolts > potPosWarnHI) warning++;
+	if (extTempDegree > extTempWarHI) warning++;
+	if (intTempDegree > intTempWarHI) warning++;
+
+	if (warning){
+		HAL_TIM_Base_Start_IT(&htim10);
+		switch (warning){
+		case 1:
+			LED_RED_WARN_PERIOD = ((carrierFreq * 10)/(WARN_BLINK_1_FREQ * 2)) - 1;
+			break;
+		case 2:
+			LED_RED_WARN_PERIOD = ((carrierFreq * 10)/(WARN_BLINK_2_FREQ * 2)) - 1;
+			break;
+		case 3:
+			LED_RED_WARN_PERIOD = ((carrierFreq * 10)/(WARN_BLINK_3_FREQ * 2)) - 1;
+			break;
+		}
+	}
+	else {
+		HAL_TIM_Base_Stop_IT(&htim10);
+		//LED_RED_WARN_PERIOD = 0;
+		HAL_GPIO_WritePin(GPIOD, LED_RED_Pin, GPIO_PIN_RESET);
+	}
 }
 /* USER CODE END 0 */
 
@@ -149,13 +237,18 @@ int main(void)
   MX_TIM4_Init();
   MX_DMA_Init();
   MX_ADC1_Init();
+  MX_TIM10_Init();
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&adcData, 3);
 
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
+  //HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+
+  //HAL_TIM_Base_Start_IT(&htim10);
+  //LED_RED_WARN_PERIOD = 0;
+  carrierFreq = (uint32_t)(HAL_RCC_GetPCLK2Freq()/(TIM10_PRESCALER));
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -164,8 +257,16 @@ int main(void)
   {
 	  if (newADCData) {
 		  updateAverageValue();
+
+		  adcDataConvert();
+
+		  updatePWM();
+
+		  alarmBlink();
+
 		  newADCData = FALSE;
 	  }
+
 
     /* USER CODE END WHILE */
 
@@ -304,7 +405,7 @@ static void MX_TIM4_Init(void)
   htim4.Instance = TIM4;
   htim4.Init.Prescaler = TIM4_PRESCALER-1;
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 0;
+  htim4.Init.Period = PWM_PERIOD-1;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
@@ -329,10 +430,6 @@ static void MX_TIM4_Init(void)
   {
     Error_Handler();
   }
-  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)
-  {
-    Error_Handler();
-  }
   if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
   {
     Error_Handler();
@@ -341,6 +438,37 @@ static void MX_TIM4_Init(void)
 
   /* USER CODE END TIM4_Init 2 */
   HAL_TIM_MspPostInit(&htim4);
+
+}
+
+/**
+  * @brief TIM10 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM10_Init(void)
+{
+
+  /* USER CODE BEGIN TIM10_Init 0 */
+
+  /* USER CODE END TIM10_Init 0 */
+
+  /* USER CODE BEGIN TIM10_Init 1 */
+
+  /* USER CODE END TIM10_Init 1 */
+  htim10.Instance = TIM10;
+  htim10.Init.Prescaler = TIM10_PRESCALER-1;
+  htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim10.Init.Period = 0;
+  htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim10.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM10_Init 2 */
+
+  /* USER CODE END TIM10_Init 2 */
 
 }
 
@@ -375,6 +503,16 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(LED_RED_GPIO_Port, LED_RED_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : LED_RED_Pin */
+  GPIO_InitStruct.Pin = LED_RED_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LED_RED_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : BUTT_UP_Pin BUTT_DOWN_Pin BUTT_LEFT_Pin BUTT_RIGHT_Pin */
   GPIO_InitStruct.Pin = BUTT_UP_Pin|BUTT_DOWN_Pin|BUTT_LEFT_Pin|BUTT_RIGHT_Pin;

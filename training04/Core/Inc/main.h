@@ -61,10 +61,14 @@ void Error_Handler(void);
 
 /* Private defines -----------------------------------------------------------*/
 #define TIM4_PRESCALER 8
+#define PWM_PERIOD 100
+#define TIM10_PRESCALER 64000
 #define POTENTIOMETER_Pin GPIO_PIN_3
 #define POTENTIOMETER_GPIO_Port GPIOA
 #define EXT_TEMP_SENSOR_Pin GPIO_PIN_1
 #define EXT_TEMP_SENSOR_GPIO_Port GPIOB
+#define LED_RED_Pin GPIO_PIN_14
+#define LED_RED_GPIO_Port GPIOD
 #define BUTT_UP_Pin GPIO_PIN_6
 #define BUTT_UP_GPIO_Port GPIOC
 #define BUTT_DOWN_Pin GPIO_PIN_8
