@@ -19,7 +19,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
+//#include "stdio.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -38,7 +38,7 @@
 #define LED_RED_PWM htim4.Instance->CCR3
 #define LED_BLUE_PWM htim4.Instance->CCR4
 #define LED_RED_WARN_PERIOD htim10.Instance->ARR
-
+#define TIM10_UPDATE htim10.Instance->EGR
 #define WARN_BLINK_1_FREQ 10						// Hz*10
 #define WARN_BLINK_2_FREQ 25						// Hz*10
 #define WARN_BLINK_3_FREQ 50						// Hz*10
@@ -85,8 +85,11 @@ const uint16_t extTempMax = 100, extTempMin = 0;		//°C
 const uint16_t intTempMax = 100, intTempMin = 0;		//°C
 
 const uint16_t potPosWarnHI = 1000;						// mV
-const uint16_t extTempWarHI = 29;						// %
-const uint16_t intTempWarHI = 32;						// %
+const uint16_t extTempWarnHI = 30;						// %
+const uint16_t intTempWarnHI = 35;						// %
+
+const uint16_t potHysteresis = 50;						//mV
+const uint16_t tempHysteresis = 1;						//°C
 
 enum {
 	POTENTIOMETER,
@@ -107,26 +110,40 @@ void updateAverageValue(void);
 void updatePWM(void);
 void adcDataConvert(void);
 void alarmBlink(void);
+_Bool hysteresisCheck(uint16_t, _Bool, uint16_t, uint16_t);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+/* @brief TIM10 counter elapsed callback
+ * @param *htim pointer to timer structure
+ * @retval None
+ * */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	HAL_GPIO_TogglePin(GPIOD, LED_RED_Pin);
 }
 
-
+/*
 int _write(int file, char* ptr, int len) {
 	int i = 0;
 	for (i = 0; i<len; i++) ITM_SendChar(*ptr++);
 	return len;
-}
+}*/
 
+/* @brief ADC group conversion complete
+ * @param hadc pointer to ADC structure
+ * @retval None
+ * */
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 		newADCData = TRUE;
 }
 
+/* @brief reading new ADC data from DMA buffer and averaging it
+ * @param none
+ * @retval None
+ * */
 void updateAverageValue(void){
 	static uint8_t currentAvrElement = 0;
 
@@ -151,19 +168,30 @@ void updateAverageValue(void){
 	intTempADCVal = intTempADCVal >> 3;
 }
 
-uint16_t limitsCheck(const uint16_t* const val, const uint16_t* const max, const uint16_t* const min){
-	if (*val > *max) return *max;
-	if (*val < *min) return *min;
-	else return *val;
+/* @brief checking if value limits reached
+ * @param constant pointers to (uint16_t) value, max, min
+ * @retval (uint16_t) result of limits check
+ * */
+uint16_t limitsCheck(const uint16_t* const value, const uint16_t* const max, const uint16_t* const min){
+	if (*value > *max) return *max;
+	if (*value < *min) return *min;
+	else return *value;
 }
 
+/* @brief update PWM values to TIM4 channels configured for PWM
+ * @param none
+ * @retval none
+ * */
 void updatePWM(void){
 	LED_BLUE_PWM = potVolts * PWM_PERIOD / VREF;
 	LED_GREEN_PWM = limitsCheck(&extTempDegree, &extTempMax, &extTempMin) * PWM_PERIOD / extTempMax;
 	LED_ORANGE_PWM = limitsCheck(&intTempDegree, &intTempMax, &intTempMin)  * PWM_PERIOD / intTempMax;
 }
 
-
+/* @brief converting raw ADC data to volts and degrees
+ * @param none
+ * @retval none
+ * */
 void adcDataConvert(void){
 	/*Potentiometer: discrete to volts*/
 	potVolts = VREF * potADCVal / ADC_RESOLUTION;
@@ -172,20 +200,48 @@ void adcDataConvert(void){
 	extTempDegree = extTempMax - ((extTempVolts - V_EXT_T_SENS_100) * extTempMax / (V_EXT_T_SENS_0 - V_EXT_T_SENS_100)) + extTempMin;
 	/*Internal temperature sensor: discrete to volts and to degrees*/
 	intTempVolts = VREF * intTempADCVal / ADC_RESOLUTION;
-	intTempDegree = ((intTempVolts - V25) / AVG_SLOPE) + 25;
+	intTempDegree = ((intTempVolts - V25) / AVG_SLOPE) + 25;		//formula from datasheet
+
+//	 printf("%d %d %d\n", potVolts, extTempDegree, intTempDegree);
 }
 
+/* @brief checking if alarm is occurred and applying hysteresis
+ * @param (uint16_t) value, warnHI, hyst, (bool) warnPrev
+ * @retval bool value
+ * */
+_Bool hysteresisCheck(uint16_t value, _Bool warnPrev, uint16_t warnHI, uint16_t hyst){
+	if (warnPrev) return (value > (warnHI - hyst));
+	else return (value > warnHI);
+}
+
+/* @brief analysing if alarm blink is needed
+ * @param none
+ * @retval none
+ * */
 void alarmBlink(void){
-	uint8_t warning = 0;
+uint8_t warning = 0;
+static uint8_t warnPrev = 0;
+static _Bool potPosWarnHiPrev, extTempWarnHiPrev, intTempWarnHiPrev;
 
-	LED_RED_WARN_PERIOD = 0;
+	if (hysteresisCheck(potVolts, potPosWarnHiPrev, potPosWarnHI, potHysteresis)) {
+		warning++;
+		potPosWarnHiPrev = TRUE;
+	}
+	else potPosWarnHiPrev = FALSE;
 
-	if (potVolts > potPosWarnHI) warning++;
-	if (extTempDegree > extTempWarHI) warning++;
-	if (intTempDegree > intTempWarHI) warning++;
+	if (hysteresisCheck(extTempDegree, extTempWarnHiPrev, extTempWarnHI, tempHysteresis)) {
+		warning++;
+		extTempWarnHiPrev = TRUE;
+	}
+	else extTempWarnHiPrev = FALSE;
+
+	if (hysteresisCheck(intTempDegree, intTempWarnHiPrev, intTempWarnHI, tempHysteresis)) {
+		warning++;
+		intTempWarnHiPrev = TRUE;
+	}
+	else intTempWarnHiPrev = FALSE;
 
 	if (warning){
-		HAL_TIM_Base_Start_IT(&htim10);
 		switch (warning){
 		case 1:
 			LED_RED_WARN_PERIOD = ((carrierFreq * 10)/(WARN_BLINK_1_FREQ * 2)) - 1;
@@ -199,9 +255,12 @@ void alarmBlink(void){
 		}
 	}
 	else {
-		HAL_TIM_Base_Stop_IT(&htim10);
-		//LED_RED_WARN_PERIOD = 0;
+		LED_RED_WARN_PERIOD = 0;
 		HAL_GPIO_WritePin(GPIOD, LED_RED_Pin, GPIO_PIN_RESET);
+	}
+	if (warning != warnPrev) {
+		TIM10_UPDATE = TRUE;
+		warnPrev = warning;
 	}
 }
 /* USER CODE END 0 */
@@ -243,10 +302,9 @@ int main(void)
 
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
-  //HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
 
-  //HAL_TIM_Base_Start_IT(&htim10);
+  HAL_TIM_Base_Start_IT(&htim10);
   //LED_RED_WARN_PERIOD = 0;
   carrierFreq = (uint32_t)(HAL_RCC_GetPCLK2Freq()/(TIM10_PRESCALER));
   /* USER CODE END 2 */
@@ -266,8 +324,6 @@ int main(void)
 
 		  newADCData = FALSE;
 	  }
-
-
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

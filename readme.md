@@ -21,6 +21,11 @@
 	* cyclically switching PWM channels (ch1, ch2, ch3, ch4, no output) via CENTER button;  
 	* PWM channels configured to be connected to PD12, PD13, PD14, PD15 port outputs;  
 ## **Training04**  
+`Two temperature (external and internal temperature sensors) and potentiometer memesurments via ADC1; value visualisation via PWM channels of TIM4 and warning indication via TIM10`  
+	* temperature mesurmet range os 0 - 100 °C for both sensors. Hysteresis is 1 °C;  
+	* potentiometer range is 0 - 3000 mV (Vref). Hysteresis is 50 mV;  
+	* alarm blinking of red LED implemented via TIM10 elapsing event;  
+	* all tree measured values (two temperatures and voltage) is translated to individual PWM channels of TIM4 (ch1, ch2, ch4). it's duty cycle is proportional to mesured value.
 
 
 
