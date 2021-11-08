@@ -3,6 +3,7 @@
   
 ## **Training01**  
 `Four consecutive blinking LEDs with cyclically changing delay.`  
+  
 	* used HAL_GPIO_WritePin and HAL_Delay functions.   
 ## **Training02**  
 `Three modes for LED blinking with adjustable frequency and power down mode.`  
@@ -23,10 +24,22 @@
 ## **Training04**  
 `Two temperature (external and internal temperature sensors) and potentiometer memesurments via ADC1; value visualisation via PWM channels of TIM4 and warning indication via TIM10`  
   
-	* temperature mesurmet range os 0 - 100 °C for both sensors. Hysteresis is 1 °C;  
+	* temperature mesurmet range is 0 - 100 °C for both sensors. Hysteresis is 1 °C;  
 	* potentiometer range is 0 - 3000 mV (Vref). Hysteresis is 50 mV;  
 	* alarm blinking of red LED implemented via TIM10 elapsing event;  
 	* all tree measured values (two temperatures and voltage) is translated to individual PWM channels of TIM4 (ch1, ch2, ch4). it's duty cycle is proportional to mesured value.
+	  
+## **Training05**  
+`LED on/off control via buttons and UART. Cyclical temperature info send via UART`  
+  
+	* UART3 configured with following settings: baud rate 115200, 8bit, no parity, 1 stop bit;  
+	* receiving data via UART implemented using DMA;
+	* external temperature sensor info is sending every 5 sec via UART. Temperature mesurmet range is 0 - 100 °C;  
+	* buttons on GL Starter Kit toggling corresponding LEDs on Discovery board (SWT3 - Orange, SWT4 - Red, SWT1 - Blue, SWT5 - Green);  
+	* buttons on keyboard of PC toggling corresponding LEDs on Discovery board via UART serial termanl ('1' - Orange, '2' - Red, '3' - Blue, '4' - Green);  
+		  
+## **Training05**  
+  
 
 
 
