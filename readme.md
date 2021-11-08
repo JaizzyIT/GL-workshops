@@ -38,7 +38,7 @@
 	* buttons on GL Starter Kit toggling corresponding LEDs on Discovery board (SWT3 - Orange, SWT4 - Red, SWT1 - Blue, SWT5 - Green);  
 	* buttons on keyboard of PC toggling corresponding LEDs on Discovery board via UART serial termanl ('1' - Orange, '2' - Red, '3' - Blue, '4' - Green);  
 		  
-## **Training05**  
+## **Training06**  
   
 
 
