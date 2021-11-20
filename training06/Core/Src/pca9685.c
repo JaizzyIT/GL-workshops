@@ -10,7 +10,7 @@
 #include "stm32f4xx_hal_i2c.h"
 
 #define I2C_TX_DELAY 1000
-#define MULTIPLIER  40.95		//4095/100
+#define MULTIPLIER  40.96		//4095/100
 
 /* @brief function for transmit data via I2C interface
  * @param (I2C_HandleTypeDef) *hi2c - I2C pointer to handle structure;
