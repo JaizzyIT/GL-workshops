@@ -39,7 +39,20 @@
 	* buttons on keyboard of PC toggling corresponding LEDs on Discovery board via UART serial termanl ('1' - Orange, '2' - Red, '3' - Blue, '4' - Green);  
 		  
 ## **Training06**  
+  `pca9685 LED PWM control via UART`  
   
+	* UART3 configured with following settings: baud rate 115200, 8bit, no parity, 1 stop bit;  
+	* receiving data via UART implemented using DMA;  
+	* I2C interface to communicate with pca9685 configured with following settings: clock requency 50kHz;  
+	* typing command on keyboard of PC via UART serial termanl will control chosen pca9685 output pins (0-15) with custom brightness (0-100%) for each pin;  
+	* command format: led <led number> <brightness>, where <led number> is 1 to 16 (pca9685 output pin +1), <brightness> - 0-100;  
+	* Examples: "led 5 100" - will power up pin number 4 with 100% PWM duty cycle;  
+				"led all 50"- will power up all out pins with 50% PWM duty cycle;  
+	* to switch off output - enter brightness with value "0" for corresponding pin/pins;  
+	* to confirm input - press Enter, to correct input - press Backspace;  
+		  
+## **Training07**  
+		 
 
 
 
