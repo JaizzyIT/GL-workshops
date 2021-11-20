@@ -278,10 +278,6 @@ int main(void)
 			  break;
 		 }
 	  }
-	  HAL_StatusTypeDef receiveStatus = HAL_UART_Receive(&huart3, (uint8_t*)&reciveBuf, 1, 1);
-	  if (receiveStatus == HAL_OK) {
-		  HAL_GPIO_TogglePin(GPIOD, LED_ORANGE_Pin);
-	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

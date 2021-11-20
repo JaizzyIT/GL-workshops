@@ -33,12 +33,12 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define LED_GREEN_PWM htim4.Instance->CCR1
-#define LED_ORANGE_PWM htim4.Instance->CCR2
-#define LED_RED_PWM htim4.Instance->CCR3
-#define LED_BLUE_PWM htim4.Instance->CCR4
-#define LED_RED_WARN_PERIOD htim10.Instance->ARR
-#define TIM10_UPDATE htim10.Instance->EGR
+#define LED_GREEN_PWM (htim4.Instance->CCR1)
+#define LED_ORANGE_PWM (htim4.Instance->CCR2)
+#define LED_RED_PWM (htim4.Instance->CCR3)
+#define LED_BLUE_PWM (htim4.Instance->CCR4)
+#define LED_RED_WARN_PERIOD (htim10.Instance->ARR)
+#define TIM10_UPDATE (htim10.Instance->EGR)
 #define WARN_BLINK_1_FREQ 10						// Hz*10
 #define WARN_BLINK_2_FREQ 25						// Hz*10
 #define WARN_BLINK_3_FREQ 50						// Hz*10
