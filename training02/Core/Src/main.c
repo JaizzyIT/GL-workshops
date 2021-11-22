@@ -69,7 +69,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_RNG_Init(void);
 /* USER CODE BEGIN PFP */
-
+void defineDelay(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -107,6 +107,31 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 
 }
 
+void defineDelay(void){
+	/* defining delay */
+	if (increaseFlag == TRUE) {
+		if (currentDelay < DELAY_MAX){
+			currentDelay += delayStep;
+			if (currentDelay > DELAY_MAX)currentDelay = DELAY_MAX;
+		}
+		else {
+			currentDelay = DELAY_MAX;
+			increaseFlag = FALSE;
+			}
+		}
+	else {
+		if (currentDelay > DELAY_MIN){
+
+			currentDelay -= delayStep;
+			if (currentDelay < DELAY_MIN) currentDelay = DELAY_MIN;
+		}
+		else {
+			currentDelay = DELAY_MIN;
+			increaseFlag = TRUE;
+			}
+		}
+	HAL_Delay(currentDelay);
+}
 /* USER CODE END 0 */
 
 /**
@@ -179,29 +204,7 @@ int main(void)
 	    		currentLED++;
 	    	else currentLED = 0;
 
-	    	/* defining delay */
-	    	if (increaseFlag == TRUE) {
-	    		if (currentDelay < DELAY_MAX){
-	    			currentDelay += delayStep;
-	    			if (currentDelay > DELAY_MAX)currentDelay = DELAY_MAX;
-	    		}
-	    		else {
-	    			currentDelay = DELAY_MAX;
-	    			increaseFlag = FALSE;
-	    			}
-	    		}
-	    	else {
-	    		if (currentDelay > DELAY_MIN){
-
-	    			currentDelay -= delayStep;
-	    			if (currentDelay < DELAY_MIN) currentDelay = DELAY_MIN;
-	    		}
-	    		else {
-	    			currentDelay = DELAY_MIN;
-	    			increaseFlag = TRUE;
-	    			}
-	    		}
-	    	HAL_Delay(currentDelay);
+	    	defineDelay();
 	    }
 		else {
 			HAL_GPIO_WritePin(GPIOD, LED_GREEN_Pin|LED_ORANGE_Pin|LED_RED_Pin|LED_BLUE_Pin, GPIO_PIN_RESET);

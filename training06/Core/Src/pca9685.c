@@ -12,6 +12,39 @@
 #define I2C_TX_DELAY 1000
 #define MULTIPLIER  40.96		//4095/100
 
+#define MODE1_REG 0						//MODE 1 register address
+#define MODE2_REG 1						//MODE 1 register address
+
+#define SUBADR1_REG 2					//SUB ADDRESS 1 register address
+#define SUBADR2_REG 3					//SUB ADDRESS 2 register address
+#define SUBADR3_REG 4					//SUB ADDRESS 3 register address
+
+#define ALLCALLADR_REG 5				//ALL CALL ADDRESS register address
+
+#define LED_ON_START_REG 6				//LED0 ON first register address
+#define LED_OFF_START_REG 8				//LED0 OFF first register address
+
+#define ALL_LED_ON_REG 250				//ALL LEDs ON first register address
+#define ALL_LED_OFF_REG 252				//ALL LEDs ON first register address
+
+#define PRE_SCALE_REG 254				//PRESCALER for PWM register address
+#define TEST_MODE 255
+
+#define MODE1_RESTART_BIT	7
+#define MODE1_EXTCLK_BIT	6
+#define MODE1_AI_BIT		5
+#define MODE1_SLEEP_BIT		4
+#define MODE1_SUB1_BIT		3
+#define MODE1_SUB2_BIT		2
+#define MODE1_SUB3_BIT		1
+#define MODE1_ALLCALL_BIT	0
+
+#define MODE2_INVRT_BIT		4
+#define MODE2_OCH_BIT		3
+#define MODE2_OUTDRV_BIT	2
+#define MODE2_OUTNE1_BIT	1
+#define MODE2_OUTNE0_BIT	0
+
 /* @brief function for transmit data via I2C interface
  * @param (I2C_HandleTypeDef) *hi2c - I2C pointer to handle structure;
  * @param (uint8_t) address - address of I2C slave;
@@ -20,7 +53,7 @@
  * @param (uint16_t) delay - timeout for transmitting operation;
  * @retval (int) transmit state
  * */
-int I2C_Master_Transimt(I2C_HandleTypeDef *hi2c, uint8_t address, const uint8_t *data, uint16_t size, uint16_t delay){
+static int pcaLED_I2C_Master_Transimt(I2C_HandleTypeDef *hi2c, uint8_t address, const uint8_t *data, uint16_t size, uint16_t delay){
 	HAL_StatusTypeDef I2C_txStatus = HAL_I2C_Master_Transmit(hi2c, address, (uint8_t *) data, size, delay);
 	if (I2C_txStatus == HAL_OK) return 0;
 	else return -1;
@@ -33,7 +66,7 @@ int I2C_Master_Transimt(I2C_HandleTypeDef *hi2c, uint8_t address, const uint8_t 
  * @param uint16_t ledOffset - every PWM cycle delay before switching on;
  * @retval none
  * */
-void setLED_PWM(pcaLED_HandleTypeDef *hpca, uint16_t ledPin, uint16_t ledDutyCycle, uint16_t ledOffset){
+void pcaLED_setPWM(pcaLED_HandleTypeDef *hpca, uint16_t ledPin, uint16_t ledDutyCycle, uint16_t ledOffset){
 	uint8_t txDataBuf[5] = {0};
 	uint16_t *ptr = NULL;
 
@@ -51,7 +84,7 @@ void setLED_PWM(pcaLED_HandleTypeDef *hpca, uint16_t ledPin, uint16_t ledDutyCyc
 	ptr = (uint16_t*)(txDataBuf+3);
 	*ptr = ((ledOffset + ledDutyCycle) > MAX_RESOLUTION) ? MAX_RESOLUTION : (ledOffset + ledDutyCycle);
 
-	I2C_Master_Transimt(hpca->hi2c, hpca->address, txDataBuf, sizeof(txDataBuf), I2C_TX_DELAY);
+	pcaLED_I2C_Master_Transimt(hpca->hi2c, hpca->address, txDataBuf, sizeof(txDataBuf), I2C_TX_DELAY);
 }
 
 /* @brief
@@ -95,8 +128,8 @@ void pcaLED_Config(pcaLED_HandleTypeDef *hpca){
 
 	hpca->address = (hpca->address << 1);
 
-	I2C_Master_Transimt(hpca->hi2c, hpca->address, txDataBuf, sizeof(txDataBuf), I2C_TX_DELAY);
-	setLED_PWM(hpca, LED_PIN_ALL, 0, DEFAULT_OFFSET);
+	pcaLED_I2C_Master_Transimt(hpca->hi2c, hpca->address, txDataBuf, sizeof(txDataBuf), I2C_TX_DELAY);
+	pcaLED_setPWM(hpca, LED_PIN_ALL, 0, DEFAULT_OFFSET);
 
 	HAL_GPIO_WritePin(hpca->OEport, hpca->OEpin, GPIO_PIN_RESET);
 }

@@ -96,6 +96,12 @@ enum {
 	EXT_TEMP_SENSOR,
 	INT_TEMP_SENSOR
 };
+
+enum {
+	WARNING_LVL_1 = 1,
+	WARNING_LVL_2 = 2,
+	WARNING_LVL_3 = 3
+}warningLevel;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -243,13 +249,13 @@ static _Bool potPosWarnHiPrev, extTempWarnHiPrev, intTempWarnHiPrev;
 
 	if (warning){
 		switch (warning){
-		case 1:
+		case WARNING_LVL_1:
 			LED_RED_WARN_PERIOD = ((carrierFreq * 10)/(WARN_BLINK_1_FREQ * 2)) - 1;
 			break;
-		case 2:
+		case WARNING_LVL_2:
 			LED_RED_WARN_PERIOD = ((carrierFreq * 10)/(WARN_BLINK_2_FREQ * 2)) - 1;
 			break;
-		case 3:
+		case WARNING_LVL_3:
 			LED_RED_WARN_PERIOD = ((carrierFreq * 10)/(WARN_BLINK_3_FREQ * 2)) - 1;
 			break;
 		}

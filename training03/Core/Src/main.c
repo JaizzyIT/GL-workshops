@@ -126,32 +126,32 @@ void updatePWMData(void){
 
 	switch (currentPWMch){
 	case 0:
-//		htim4.Instance->CCR1 = 0;
-//		htim4.Instance->CCR2 = 0;
-//		htim4.Instance->CCR3 = 0;
+		htim4.Instance->CCR1 = 0;
+		htim4.Instance->CCR2 = 0;
+		htim4.Instance->CCR3 = 0;
 		htim4.Instance->CCR4 = 0;
 		break;
 	case 1:
 		htim4.Instance->CCR1 = currentDutyCycle;
-//		htim4.Instance->CCR2 = 0;
-//		htim4.Instance->CCR3 = 0;
-//		htim4.Instance->CCR4 = 0;
+		htim4.Instance->CCR2 = 0;
+		htim4.Instance->CCR3 = 0;
+		htim4.Instance->CCR4 = 0;
 		break;
 	case 2:
 		htim4.Instance->CCR1 = 0;
 		htim4.Instance->CCR2 = currentDutyCycle;
-//		htim4.Instance->CCR3 = 0;
-//		htim4.Instance->CCR4 = 0;
+		htim4.Instance->CCR3 = 0;
+		htim4.Instance->CCR4 = 0;
 		break;
 	case 3:
-//		htim4.Instance->CCR1 = 0;
+		htim4.Instance->CCR1 = 0;
 		htim4.Instance->CCR2 = 0;
 		htim4.Instance->CCR3 = currentDutyCycle;
-//		htim4.Instance->CCR4 = 0;
+		htim4.Instance->CCR4 = 0;
 		break;
 	case 4:
-//		htim4.Instance->CCR1 = 0;
-//		htim4.Instance->CCR2 = 0;
+		htim4.Instance->CCR1 = 0;
+		htim4.Instance->CCR2 = 0;
 		htim4.Instance->CCR3 = 0;
 		htim4.Instance->CCR4 = currentDutyCycle;
 		break;

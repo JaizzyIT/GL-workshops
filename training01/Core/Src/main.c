@@ -49,9 +49,9 @@
 
 /* USER CODE BEGIN PV */
 uint16_t ledSelect[NUM_OF_LEDS] = {LED_GREEN_Pin, LED_ORANGE_Pin, LED_RED_Pin, LED_BLUE_Pin};
-uint16_t currentDelay;
-uint8_t currentLED;
-_Bool increaseFlag;
+uint16_t currentDelay = 0;
+uint8_t currentLED = 0;
+_Bool increaseFlag = FALSE;
 
 /* USER CODE END PV */
 

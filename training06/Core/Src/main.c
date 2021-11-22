@@ -37,6 +37,7 @@
 #define FALSE 0
 
 #define DEL_SYMBOL 0x7f 		//127 - ascii code for del symbol (work as backspase as well)
+#define ALL_LEDS 0xff
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
@@ -138,7 +139,7 @@ void parseNewCommand(void){
 	scanStatus = sscanf(ReciveBuf, "%s %u %u", str1, &ledNum, &ledBright);
 	if (scanStatus != 3 || (strcmp(str1, "led") != 0)){
 		scanStatus = sscanf(ReciveBuf, "%s %s %u", str1, str2, &ledBright);
-		ledNum = 0xff;
+		ledNum = ALL_LEDS;
 		if (scanStatus != 3 || (strcmp(str1, "led") != 0) || (strcmp(str2, "all") != 0)){
 			printf("\r\n>>! Wrong command or format. Format: led <number> <brightness> !<<\r\n");
 			return;
@@ -153,16 +154,16 @@ void parseNewCommand(void){
 		ledBright = 0;
 	}
 
-	if (ledNum == 0xff) {
+	if (ledNum == ALL_LEDS) {
 		if (ledBright > 0) printf("\r\n-- Light up ALL LEDs with %d%% brightness --\r\n", ledBright);
 		else printf("\r\n-- Switching off ALL LEDs --\r\n");
-		setLED_PWM(&hpca1, LED_PIN_ALL, ledBright, DEFAULT_OFFSET);
+		pcaLED_setPWM(&hpca1, LED_PIN_ALL, ledBright, DEFAULT_OFFSET);
 		return;
 	}
 	else if (ledNum > 0 && ledNum <= MAX_NUM_OF_LEDS) {
 		if (ledBright > 0) printf("\r\n-- Light up LED number %d with %d%% brightness --\r\n", ledNum, ledBright);
 		else printf("\r\n-- Switching off LED number %d --\r\n", ledNum);
-		setLED_PWM(&hpca1, ledNum-1, ledBright, DEFAULT_OFFSET);
+		pcaLED_setPWM(&hpca1, ledNum-1, ledBright, DEFAULT_OFFSET);
 	}
 	else printf("\r\n>>! Wrong LED number. Use 1 to 16 LED number !<<\r\n");
 }
