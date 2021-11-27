@@ -53,6 +53,7 @@
 		  
 ## **Training07**  
   `Read, write and erase data to/from AT25DF161-SH-T flash memory chip via SPI with debug via UART3`  
+    
 	* UART3 configured with following settings: baud rate 115200, 8bit, no parity, 1 stop bit;    
 	* SPI interface to communicate with flash memory configured with following settings: clock baud rate 500 kBits/s;  
 	* to read data from flash memory: press <DOWN> button  
