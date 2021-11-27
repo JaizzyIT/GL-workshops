@@ -59,6 +59,8 @@
 	* to erase whole flash memory: press <CENTER/OK> button  
 	* to write Time Capsule to flash memory: press <CENTER/OK> button  
 	* still in developing. TODO: commands via UART terminal, write data from termonal to flash memory.  
+	  
+
 
 
 
