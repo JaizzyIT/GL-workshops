@@ -37,7 +37,7 @@
 #define TRUE 1
 #define FALSE 0
 
-#define READ 0x03
+#define READ_CHIP 0x03
 #define SECTOR_4KB_ERASE 0x20
 #define CHIP_ERASE 0x60
 #define BYTE_PROGRAM 0x02
@@ -51,13 +51,15 @@
 #define EBSY 0x70					//Enable SO to output RY/BY# status during AAI programming
 #define DBSY 0x80					//Disable SO to output RY/BY# status during AAI programming
 
-#define START_ADDERSS 0x00
+#define START_ADDRESS 0x00
 #define SECTOR_MAX_ADDRESS 0x1ff
 #define SECTOR_DATA_MAX_ADDRESS 0xfff
 
 #define TX_UART_BUF_SIZE 64
 #define RX_UART_BUF_SIZE 5012
 #define UART_TIMEOUT 10
+
+#define DEL_SYMBOL 0x7f 			//127 - ascii code for del symbol (work as backspase as well)
 
 #define TX_SPI_BUF_SIZE 8
 #define RX_SPI_BUF_SIZE 5012
@@ -85,10 +87,17 @@ char reciveUARTbuf[RX_UART_BUF_SIZE] = {0};
 char receiveUARTchar;
 char transmitUARTbuf[TX_UART_BUF_SIZE] = {0};
 
+char *rxUARTbuffPtr = reciveUARTbuf;
+
 uint8_t txSPIbuffer[TX_SPI_BUF_SIZE] = {0};
 uint8_t rxSPIbuffer[RX_SPI_BUF_SIZE] = {0};
 
 _Bool statusReading = FALSE;
+_Bool action = FALSE;
+volatile _Bool terminated = FALSE;
+volatile _Bool busy = FALSE;
+
+const char errorMessage[] = "\r\n>>! Wrong command or format. Format: [read/write/erase] [line/all/TimeCapsule] [0-511] [<text> (max 4092 symbols)] !<<\r\n";
 
 const char *time_capsule[] = {
 		"From: Yuriy Krutchenko, yuriy.elius@gmail.com\r",
@@ -115,6 +124,21 @@ const char *time_capsule[] = {
 };
 
 uint16_t sizeOfTimeCapsule = (sizeof(time_capsule)/sizeof(time_capsule[0]));
+
+enum{
+	READ,
+	WRITE,
+	ERASE
+}commands;
+
+enum{
+	NONE = 0,
+	ERASE_WHOLE_CHIP = 1,
+	ERASE_SECTOR = 2,
+	ERASE_TIME_CAPSULE
+}confirmations;
+
+uint8_t confirmation = NONE;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -128,13 +152,17 @@ void flashSPI_RxTx_DMA(uint8_t *tx, uint8_t *rx, uint16_t size);
 void flashSPI_RxTx_Blocking(uint8_t *tx, uint8_t *rx, uint16_t size);
 uint8_t flashReadStatus(void);
 void flashWriteStatus(uint8_t command);
-//void flashWriteData(uint16_t sector_addr, int16_t byte_addr, const char* data);
 void flashWriteByte(uint16_t sector_addr, int16_t byte_addr, uint8_t byte);
 void flashChipErase(void);
 void flashChipEraseSector(uint16_t sector_addr);
-void flashReadData(uint16_t sector_addr_from, uint16_t sector_addr_to, int16_t byte_addr, uint16_t size);
-void flashWriteDataToSector(uint16_t sector_addr, int16_t byte_addr, const char* data);
+void flashReadData(uint16_t sector_addr_from, uint16_t sector_addr_to, int16_t byte_addr, uint16_t size, _Bool isEmptyCheck);
+int flashWriteDataToSector(uint16_t sector_addr, int16_t byte_addr, const char* data);
+void flashReadTimeCapsule(void);
 void flashWriteTimeCapsule(void);
+void flashEraseTimeCapsule(void);
+_Bool flashIsSectorEmpty(uint16_t sector_addr);
+_Bool flashIsBusy(void);
+void flashConfirmationProcessing(char* ptr, uint16_t sectorAddress);
 
 /* USER CODE END PFP */
 
@@ -155,14 +183,19 @@ void printChar(char* buf){
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+	if(confirmation) confirmation = NONE;
+
+	if (busy == TRUE){
+		terminated = TRUE;
+		return;
+	}
+
 	switch (GPIO_Pin) {
 	case BUTT_UP_Pin:
-		flashChipErase();													//erase whole chip
+		flashChipErase();
 		break;
 	case BUTT_DOWN_Pin:
-		printf("\r\nReading the Time Capsule data\r\n");
-		flashReadData(0, (sizeOfTimeCapsule-1), 0, 100);					//read time capsule
-		printf("......Done!\r\n");
+		flashReadTimeCapsule();
 		break;
 	case BUTT_LEFT_Pin:
 
@@ -170,41 +203,39 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
 	case BUTT_RIGHT_Pin:
 		break;
 	case BUTT_OK_Pin:
-		flashWriteTimeCapsule();											//write time capsule
+		flashWriteTimeCapsule();
 		break;
 	}
 }
 
-void HAL_UART_RxCpltCallback (UART_HandleTypeDef * huart){					//placeholder for update to project..
-/*	if (receiveUARTchar == '\r') {
-		*rxBuffPtr = '\0';
-		rxBuffPtr = reciveUARTbuf;function
-		action = TRUE;
+void HAL_UART_RxCpltCallback (UART_HandleTypeDef * huart){
+	if (busy == TRUE){
+		terminated = TRUE;
 		return;
-	status = flashReadStatus();
-	if (BIT_IS_SET(status, 0)){
-		printf("Error. Devise is busy");
-		return;
-	}
 	}
 
-	if ((receiveUARTchar == DEL_SYMBOL) && (rxBuffPtr > reciveUARTbuf)){
-		rxBuffPtr--;
+	if (receiveUARTchar == '\r') {
+		*rxUARTbuffPtr = '\r';
+		rxUARTbuffPtr = reciveUARTbuf;
+		action = TRUE;
+		return;
+	}
+
+	if ((receiveUARTchar == DEL_SYMBOL) && (rxUARTbuffPtr > reciveUARTbuf)){
+		rxUARTbuffPtr--;
 		printChar(&receiveUARTchar);
 		return;
 	}
 
-	if ((isalnum(receiveUARTchar) || receiveUARTchar == ' ') == 0)	return;
-
-	if (rxBuffPtr < (reciveUARTbuf + RX_UART_BUF_SIZE)){
-		*rxBuffPtr = receiveUARTchar;
-		rxBuffPtr++;
+	if (rxUARTbuffPtr < (reciveUARTbuf + RX_UART_BUF_SIZE)){
+		*rxUARTbuffPtr = receiveUARTchar;
+		rxUARTbuffPtr++;
 		printChar(&receiveUARTchar);
 	}
 	else {
-		rxBuffPtr = reciveUARTbuf;
+		rxUARTbuffPtr = reciveUARTbuf;
 		printf("\r\n--! The command is too long, try again !--\r\n");
-	}*/
+	}
 }
 
 void flashSPI_RxTx_Blocking(uint8_t *tx, uint8_t *rx, uint16_t size){
@@ -220,6 +251,11 @@ uint8_t flashReadStatus(void){
 	printf("Status register value: %x\r\n", rxSPIbuffer[1]);
 }
 
+
+_Bool flashIsBusy(void){
+	return BIT_IS_SET(flashReadStatus(), 0);
+}
+
 void flashWriteStatus(uint8_t command){
 	txSPIbuffer[0] = EN_WR_STATUS_REG;
 	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 1);
@@ -228,29 +264,38 @@ void flashWriteStatus(uint8_t command){
 	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 2);
 }
 
-void flashReadData(uint16_t sector_addr_from, uint16_t sector_addr_to, int16_t byte_addr, uint16_t size){
+void flashReadData(uint16_t sector_addr_from, uint16_t sector_addr_to, int16_t byte_addr, uint16_t size, _Bool isEmptyCheck){
 	uint16_t sector_addr_curr = sector_addr_from;
 
-	uint8_t status = flashReadStatus();
-
-	if (BIT_IS_SET(status, 0)){
-		printf("Error. Devise is busy\r\n");
+	if (flashIsBusy()){
+		printf("\r\n>>! Error. Devise is busy !<<\r\n");
 		return;
 	}
 	if (sector_addr_to > SECTOR_MAX_ADDRESS){
-		printf("Error. The end of memory\r\n");
+		printf("\r\n>>! Error. The end of memory !<<\r\n");
 		return;
 	}
 
+	busy = TRUE;
+
 	while(sector_addr_curr <= sector_addr_to){
-		txSPIbuffer[0] = READ;
+		if (terminated) {
+			terminated = FALSE;
+			printf("\r\n>>! Reading has been terminated by user! !<<\r\n");
+			busy = FALSE;
+			return;
+		}
+		txSPIbuffer[0] = READ_CHIP;
 		txSPIbuffer[1] = (uint8_t)(sector_addr_curr >> 4);
 		txSPIbuffer[2] = (uint8_t)((sector_addr_curr << 4) | (byte_addr >> 8));
 		txSPIbuffer[3] = (uint8_t)byte_addr;
 
 		flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, size);
 
-		if(size == 5 && sector_addr_to == START_ADDERSS) return;
+		if(isEmptyCheck) {											//checking if it was only "if sector empty" call - always single cycle needs
+			busy = FALSE;
+			return;
+		}
 
 		printf("Line %d: ", sector_addr_curr);						//let's name it for user "line" instead of "sector", that's more convenient ;)
 		sector_addr_curr++;
@@ -263,6 +308,7 @@ void flashReadData(uint16_t sector_addr_from, uint16_t sector_addr_to, int16_t b
 			printf("%s", (rxSPIbuffer+4));
 		}
 	}
+	busy = FALSE;
 }
 
 void flashWriteByte(uint16_t sector_addr, int16_t byte_addr, uint8_t byte){
@@ -277,37 +323,51 @@ void flashWriteByte(uint16_t sector_addr, int16_t byte_addr, uint8_t byte){
 	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 5);
 }
 
-void flashWriteDataToSector(uint16_t sector_addr, int16_t byte_addr, const char* data){
+int flashWriteDataToSector(uint16_t sector_addr, int16_t byte_addr, const char* data){
+	uint16_t symbolsCounter = 0;
 	const char *endPtr = data + (BYTES_IN_SECTOR - 3);
 
-	uint8_t status = flashReadStatus();
-	if (BIT_IS_SET(status, 0)){
-		printf("Error. Devise is busy\r\n");
-		return;
+	if (flashIsBusy()){
+		printf("\r\n>>!Error. Devise is busy !<<\r\n");
+		return -1;
 	}
 
 	if (sector_addr > SECTOR_MAX_ADDRESS){
-		printf("Error. The end of memory\r\n");
-		return;
+		printf("\r\n>>! Error. The end of memory !<<\r\n");
+		return -1;
 	}
 
 	if(BYTES_IN_SECTOR < sizeof(data)){
-		printf("The data is too long\r\n");
-		return;
+		printf("\r\n>>! Error. The data is too long. Maximum data length is 4092 symbols !<<\r\n");
+		return -1;
 	}
 
-	while(data < endPtr && *data != '\r'){
-		flashWriteByte(sector_addr, byte_addr, (uint8_t) *data);
-		data++;
+	if(flashIsSectorEmpty(sector_addr)){
+		while(data < endPtr && *data != '\r'){
+			if (terminated) {
+				terminated = FALSE;
+				printf("\r\n>>! Writing has been terminated by user! !<<\r\n");
+				busy = FALSE;
+				return -2;
+			}
+			flashWriteByte(sector_addr, byte_addr, (uint8_t) *data);
+			data++;
+			byte_addr++;
+			symbolsCounter++;
+			}
+		flashWriteByte(sector_addr, byte_addr, '\r');
 		byte_addr++;
-		}
-	flashWriteByte(sector_addr, byte_addr, '\r');
-	byte_addr++;
-	flashWriteByte(sector_addr, byte_addr, '\n');
-	byte_addr++;
-	flashWriteByte(sector_addr, byte_addr, '\0');
+		flashWriteByte(sector_addr, byte_addr, '\n');
+		byte_addr++;
+		flashWriteByte(sector_addr, byte_addr, '\0');
 
-	printf("Line %d is written\r\n", sector_addr);
+		printf("Line %d has been written with %d printable symbols\r\n", sector_addr, symbolsCounter);
+	}
+	else {
+		printf(">>! Write procedure was terminated at line %d! Line is not empty, erase it first !<<\r\n\r\n", sector_addr);
+		return -1;
+	}
+	return 0;
 }
 
 void flashChipErase(void){
@@ -332,21 +392,188 @@ void flashChipEraseSector(uint16_t sector_addr){
 }
 
 _Bool flashIsSectorEmpty(uint16_t sector_addr){
-	flashReadData(START_ADDERSS, START_ADDERSS, START_ADDERSS, 5);
+	flashReadData(sector_addr, sector_addr, START_ADDRESS, 5, TRUE);
 	if (rxSPIbuffer[4] == EMPTY_BYTE) return TRUE;
 	else return FALSE;
 }
 
 void flashWriteTimeCapsule(void){
-	if(flashIsSectorEmpty(START_ADDERSS)){
-		printf("\r\nWriting the Time Capsule data\r\n");
-		for(uint16_t i = 0; i < sizeOfTimeCapsule; i++){
-			flashWriteDataToSector(i, START_ADDERSS, time_capsule[i]);
-			}
-		printf("......Done!\r\n");
+	printf("\r\nWriting the Time Capsule data\r\n");
+	busy = TRUE;
+	for(uint16_t i = 0; i < sizeOfTimeCapsule; i++){
+		int8_t status;
+		status = flashWriteDataToSector(i, START_ADDRESS, time_capsule[i]);
+		if (status < 0) {
+			busy = FALSE;
+			return;
 		}
-	else printf("The memory is not empty. To write Time Capsule please erase chip first\r\n");
+	}
+	busy = FALSE;
+	printf("......Done!\r\n\r\n");
 }
+
+void flashReadTimeCapsule(void){
+	printf("\r\nReading Time Capsule data\r\n");
+	flashReadData(0, (sizeOfTimeCapsule-1), 0, 100, FALSE);
+	printf("......Done!\r\n\r\n");
+}
+
+void flashEraseTimeCapsule(void){
+	printf("\r\nErasing Time Capsule data\r\n");
+	for (uint8_t i = START_ADDRESS; i < sizeOfTimeCapsule; i++){
+		if (flashIsBusy()){
+			printf("\r\n>>!Error. Devise is busy !<<\r\n");
+			return;
+		}
+		flashChipEraseSector(START_ADDRESS + i);
+		HAL_Delay(50);
+	}
+	printf("......Done!\r\n\r\n");
+}
+
+void flashConfirmationProcessing(char* ptr, uint16_t sectorAddress){
+	if (strncmp(ptr, "y\r", strlen("y\r")) == 0) {
+		if (confirmation == ERASE_WHOLE_CHIP){
+			flashChipErase();
+			return;
+		}
+		else if (confirmation == ERASE_SECTOR){
+			printf("\r\n");
+			flashChipEraseSector(sectorAddress);
+			return;
+		}
+		else if (confirmation == ERASE_TIME_CAPSULE){
+			flashEraseTimeCapsule();
+			return;
+		}
+	}
+	else if (strncmp(ptr, "n\r", strlen("n\r")) == 0) {
+		printf("\r\nErasing has been canceled\r\n");
+		return;
+	}
+	else {
+		printf("\r\nWrong confirmation input\r\n");
+		return;
+	}
+}
+
+void parseNewCommandAndData(void){
+	static uint16_t sectorNumFrom = 0;
+	uint16_t sectorNumTo = 0;
+	char *ptr = reciveUARTbuf;
+	uint8_t command = 0;
+
+	if (confirmation){
+		flashConfirmationProcessing(ptr, sectorNumFrom);
+		confirmation = NONE;
+		return;
+	}
+
+	sectorNumFrom = START_ADDRESS;
+
+	if (strncmp(ptr, "read ", strlen("read ")) == 0) {
+		command = READ;
+		ptr += strlen("read ");
+	}
+	else if (strncmp(ptr, "write ", strlen("write ")) == 0) {
+		command = WRITE;
+		ptr += strlen("write ");
+	}
+	else if (strncmp(ptr, "erase ", strlen("erase ")) == 0) {
+		command = ERASE;
+		ptr += strlen("erase ");
+	}
+	else {
+		printf(errorMessage);
+		return;
+	}
+
+	if (strncmp(ptr, "all\r", strlen("all\r")) == 0) {
+		if (command == READ){
+			flashReadData(0, SECTOR_MAX_ADDRESS, START_ADDRESS, BYTES_IN_SECTOR, FALSE);
+			return;
+		}
+		else if (command == WRITE) {
+			printf("\r\n>>! Wrong command. Specify line number to write !<<\r\n");
+			return;
+		}
+		else if (command == ERASE){
+			printf("\r\n>>??? Are you sure? Whole data will be lost. (y/n): ");
+			fflush(stdout);
+			confirmation = ERASE_WHOLE_CHIP;
+			return;
+			}
+	}
+	else if (strncmp(ptr, "TimeCapsule\r", strlen("TimeCapsule\r")) == 0) {
+		if (command == READ){
+			flashReadTimeCapsule();
+			return;
+		}
+		else if (command == WRITE){
+			flashWriteTimeCapsule();
+			return;
+		}
+		else if (command == ERASE){
+			printf("\r\n>>??? Are you sure? Whole Time Capsule data will be lost. (y/n): ");
+			fflush(stdout);
+			confirmation = ERASE_TIME_CAPSULE;
+			return;
+		}
+	}
+	else if (strncmp(ptr, "line ", strlen("line ")) == 0) {
+		ptr += strlen("line ");
+	}
+	else {
+		printf(errorMessage);
+		return;
+	}
+
+	if(*ptr >= '0' && *ptr <= '9') {
+		sectorNumFrom = (uint8_t)(*ptr - '0');
+		ptr++;
+	}
+	if(*ptr >= '0' && *ptr <= '9') {
+		sectorNumFrom *= 10;
+		sectorNumFrom += (uint8_t)(*ptr - '0');
+		ptr++;
+	}
+	if(*ptr >= '0' && *ptr <= '9') {
+		sectorNumFrom *= 10;
+		sectorNumFrom += (uint8_t)(*ptr - '0');
+		ptr++;
+	}
+	if (*ptr == '\r'){
+		if (sectorNumFrom <= SECTOR_MAX_ADDRESS){
+			if (command == READ){
+				printf("\r\n");
+				flashReadData(sectorNumFrom, sectorNumFrom, START_ADDRESS, BYTES_IN_SECTOR, FALSE);
+				return;
+			}
+			else if (command == WRITE){
+				printf("\r\n>>! Error! No data to write !<<\r\n");
+				return;
+			}
+			else if (command == ERASE){
+				printf("\r\n>>??? Are you sure? Data in line %d will be lost. (y/n): ", sectorNumFrom);
+				fflush(stdout);
+				confirmation = ERASE_SECTOR;
+				return;
+			}
+		}
+		else {
+			printf("\r\n>>! Error! Incorrect line number. Number should be 0 to 511 !<<\r\n");
+			return;
+		}
+	}
+	else if(*ptr == ' '){
+		ptr++;
+		printf("\r\n");
+		flashWriteDataToSector(sectorNumFrom, START_ADDRESS, ptr);
+		return;
+	}
+	printf(errorMessage);
+}
+
 
 /* USER CODE END 0 */
 
@@ -386,9 +613,17 @@ int main(void)
 
   flashWriteStatus(ENABLE_WRITE_TO_CHIP);
 
-  printf("\r\n- To read data from flash memory: press <DOWN> button -\r\n"
-		  	 "- To erase whole flash memory: press <CENTER/OK> button -\r\n"
-		  	 "- To write Time Capsule to flash memory: press <CENTER/OK> button -\r\n");
+  printf("\r\n- To execute command via console use following format:\r\n"
+		 "- [read/write/erase] [line/all/TimeCapsule] [0-511] [<text> (max 4092 symbols)]\r\n"
+		 "- Examples: \"read line 20\", \"write line 70 Hello, world!\", \"erase all\",\r\n"
+		 "-           \"erase line 100\", \"read/write/erase Time Capsule\"\r\n"
+		 "- INFO: the \"read all\" command will execute reading of WHOLE chip memory and will take a while\r\n"
+		 "- To terminate any long operation press any key or button on board\r\n"
+		 "- - - - - - - - - - - - - - - - - - - - - - - - -\r\n"
+		 "- To read Time Capsule via board buttons: press <DOWN> button\r\n"
+		 "- To erase whole flash memory via board buttons: press <CENTER/OK> button\r\n"
+		 "- To write Time Capsule via board buttons: press <CENTER/OK> button\r\n"
+		 "\r\n");
 /*		  	 "- placeholder -\r\n"
 		  	 "- placeholder -\r\n");*/
   /* USER CODE END 2 */
@@ -397,7 +632,11 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  if (action){
+		  parseNewCommandAndData();
 
+		  action = FALSE;
+	  }
 /*	  flashReadStatus();
 
 	  HAL_Delay(1000);*/
