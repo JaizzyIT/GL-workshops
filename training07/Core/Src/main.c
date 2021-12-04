@@ -62,12 +62,14 @@
 #define DEL_SYMBOL 0x7f 			//127 - ascii code for del symbol (work as backspase as well)
 
 #define TX_SPI_BUF_SIZE 8
-#define RX_SPI_BUF_SIZE 5012
+#define RX_SPI_BUF_SIZE 4096
 #define SPI_TIMEOT 100
 
-#define BYTES_IN_SECTOR 4095
+#define BYTES_IN_SECTOR 4096		//
 #define EMPTY_BYTE 0xff
 #define ENABLE_WRITE_TO_CHIP 0
+#define NUMBER_OF_END_SYMBOLS 3		// will be added in the end of each line: \n\r\0 - 3 symbols
+
 
 /* USER CODE END PD */
 
@@ -148,8 +150,11 @@ static void MX_DMA_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
-void flashSPI_RxTx_DMA(uint8_t *tx, uint8_t *rx, uint16_t size);
+//void flashSPI_RxTx_DMA(uint8_t *tx, uint8_t *rx, uint16_t size);
 void flashSPI_RxTx_Blocking(uint8_t *tx, uint8_t *rx, uint16_t size);
+void flashSPI_Rx_Blocking(uint8_t *rx, uint16_t size);
+void flashSPI_Tx_Blocking(uint8_t *tx, uint16_t size);
+void flashSPI_Rx_Tx_Blocking(uint8_t *tx, uint8_t *rx, uint16_t tx_size, uint16_t rx_size);
 uint8_t flashReadStatus(void);
 void flashWriteStatus(uint8_t command);
 void flashWriteByte(uint16_t sector_addr, int16_t byte_addr, uint8_t byte);
@@ -174,6 +179,7 @@ int _write(int file, char* ptr, int len) {
 	HAL_UART_Transmit(&huart3, (uint8_t*)transmitUARTbuf, len, UART_TIMEOUT);
 	return len;
 }
+
 /* @brief function for send one char via uart
  * @param *buf pointer to (char) value
  * @retval None
@@ -238,19 +244,24 @@ void HAL_UART_RxCpltCallback (UART_HandleTypeDef * huart){
 	}
 }
 
-void flashSPI_RxTx_Blocking(uint8_t *tx, uint8_t *rx, uint16_t size){
+void flashSPI_Tx_Blocking(uint8_t *tx, uint16_t size){
 	HAL_GPIO_WritePin(GPIOD, SPI1_CS_Pin, FALSE);
-	HAL_SPI_TransmitReceive(&hspi1, tx, rx, size, SPI_TIMEOT);
+	HAL_SPI_Transmit(&hspi1, tx, size, SPI_TIMEOT);
+	HAL_GPIO_WritePin(GPIOD, SPI1_CS_Pin, TRUE);
+}
+
+void flashSPI_Rx_Tx_Blocking(uint8_t *tx, uint8_t *rx, uint16_t tx_size, uint16_t rx_size){
+	HAL_GPIO_WritePin(GPIOD, SPI1_CS_Pin, FALSE);
+	HAL_SPI_Transmit(&hspi1, tx, tx_size, SPI_TIMEOT);
+	HAL_SPI_Receive(&hspi1, rx, rx_size, SPI_TIMEOT);
 	HAL_GPIO_WritePin(GPIOD, SPI1_CS_Pin, TRUE);
 }
 
 uint8_t flashReadStatus(void){
 	txSPIbuffer[0] = READ_STATUS_REG;
-	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 2);
-	return rxSPIbuffer[1];
-	printf("Status register value: %x\r\n", rxSPIbuffer[1]);
+	flashSPI_Rx_Tx_Blocking(txSPIbuffer, rxSPIbuffer, 1, 2);
+	return rxSPIbuffer[0];
 }
-
 
 _Bool flashIsBusy(void){
 	return BIT_IS_SET(flashReadStatus(), 0);
@@ -258,13 +269,13 @@ _Bool flashIsBusy(void){
 
 void flashWriteStatus(uint8_t command){
 	txSPIbuffer[0] = EN_WR_STATUS_REG;
-	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 1);
+	flashSPI_Tx_Blocking(txSPIbuffer, 1);
 	txSPIbuffer[0] = WRITE_STATUS_REG;
 	txSPIbuffer[1] = command;
-	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 2);
+	flashSPI_Tx_Blocking(txSPIbuffer, 2);
 }
 
-void flashReadData(uint16_t sector_addr_from, uint16_t sector_addr_to, int16_t byte_addr, uint16_t size, _Bool isEmptyCheck){
+void flashReadData(uint16_t sector_addr_from, uint16_t sector_addr_to, int16_t byte_addr, uint16_t rx_size, _Bool isEmptyCheck){
 	uint16_t sector_addr_curr = sector_addr_from;
 
 	if (flashIsBusy()){
@@ -290,7 +301,8 @@ void flashReadData(uint16_t sector_addr_from, uint16_t sector_addr_to, int16_t b
 		txSPIbuffer[2] = (uint8_t)((sector_addr_curr << 4) | (byte_addr >> 8));
 		txSPIbuffer[3] = (uint8_t)byte_addr;
 
-		flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, size);
+		flashSPI_Rx_Tx_Blocking(txSPIbuffer, rxSPIbuffer, 4, rx_size);
+
 
 		if(isEmptyCheck) {											//checking if it was only "if sector empty" call - always single cycle needs
 			busy = FALSE;
@@ -300,12 +312,12 @@ void flashReadData(uint16_t sector_addr_from, uint16_t sector_addr_to, int16_t b
 		printf("Line %d: ", sector_addr_curr);						//let's name it for user "line" instead of "sector", that's more convenient ;)
 		sector_addr_curr++;
 
-		if (rxSPIbuffer[4] == EMPTY_BYTE){
+		if (rxSPIbuffer[0] == EMPTY_BYTE){
 			printf("empty\r\n");
 			continue;
 		}
 		else{
-			printf("%s", (rxSPIbuffer+4));
+			printf("%s", (rxSPIbuffer));
 		}
 	}
 	busy = FALSE;
@@ -313,19 +325,24 @@ void flashReadData(uint16_t sector_addr_from, uint16_t sector_addr_to, int16_t b
 
 void flashWriteByte(uint16_t sector_addr, int16_t byte_addr, uint8_t byte){
 	txSPIbuffer[0] = WRITE_ENABLE;
-	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 1);
+	flashSPI_Tx_Blocking(txSPIbuffer, 1);
 
 	txSPIbuffer[0] = BYTE_PROGRAM;
 	txSPIbuffer[1] = (uint8_t)(sector_addr >> 4);
 	txSPIbuffer[2] = (uint8_t)((sector_addr << 4) | (byte_addr >> 8));
 	txSPIbuffer[3] = (uint8_t)byte_addr;
 	txSPIbuffer[4] = byte;
-	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 5);
+	flashSPI_Tx_Blocking(txSPIbuffer, 5);
 }
 
 int flashWriteDataToSector(uint16_t sector_addr, int16_t byte_addr, const char* data){
 	uint16_t symbolsCounter = 0;
-	const char *endPtr = data + (BYTES_IN_SECTOR - 3);
+	const char *endPtr = data + (BYTES_IN_SECTOR - NUMBER_OF_END_SYMBOLS);
+
+	if ((endPtr - data) > (BYTES_IN_SECTOR - NUMBER_OF_END_SYMBOLS)){
+		printf("\r\n>>! Error. The data is too long. Maximum data length is 4092 symbols !<<\r\n");
+		return -1;
+	}
 
 	if (flashIsBusy()){
 		printf("\r\n>>!Error. Devise is busy !<<\r\n");
@@ -334,11 +351,6 @@ int flashWriteDataToSector(uint16_t sector_addr, int16_t byte_addr, const char* 
 
 	if (sector_addr > SECTOR_MAX_ADDRESS){
 		printf("\r\n>>! Error. The end of memory !<<\r\n");
-		return -1;
-	}
-
-	if(BYTES_IN_SECTOR < sizeof(data)){
-		printf("\r\n>>! Error. The data is too long. Maximum data length is 4092 symbols !<<\r\n");
 		return -1;
 	}
 
@@ -372,28 +384,28 @@ int flashWriteDataToSector(uint16_t sector_addr, int16_t byte_addr, const char* 
 
 void flashChipErase(void){
 	txSPIbuffer[0] = WRITE_ENABLE;
-	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 1);
+	flashSPI_Tx_Blocking(txSPIbuffer, 1);
 
 	txSPIbuffer[0] = CHIP_ERASE;
-	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 1);
+	flashSPI_Tx_Blocking(txSPIbuffer, 1);
 	printf("\r\nErasing whole chip\r\n");
 }
 
 void flashChipEraseSector(uint16_t sector_addr){
 	txSPIbuffer[0] = WRITE_ENABLE;
-	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 1);
+	flashSPI_Tx_Blocking(txSPIbuffer, 1);
 
 	txSPIbuffer[0] = SECTOR_4KB_ERASE;
 	txSPIbuffer[1] = (uint8_t)(sector_addr >> 4);
 	txSPIbuffer[2] = (uint8_t)(sector_addr << 4);
 	txSPIbuffer[3] = 0;
-	flashSPI_RxTx_Blocking(txSPIbuffer, rxSPIbuffer, 4);
+	flashSPI_Tx_Blocking(txSPIbuffer, 4);
 	printf("Erasing line: %d\r\n", sector_addr);
 }
 
 _Bool flashIsSectorEmpty(uint16_t sector_addr){
 	flashReadData(sector_addr, sector_addr, START_ADDRESS, 5, TRUE);
-	if (rxSPIbuffer[4] == EMPTY_BYTE) return TRUE;
+	if (rxSPIbuffer[0] == EMPTY_BYTE) return TRUE;
 	else return FALSE;
 }
 
@@ -459,7 +471,7 @@ void flashConfirmationProcessing(char* ptr, uint16_t sectorAddress){
 
 void parseNewCommandAndData(void){
 	static uint16_t sectorNumFrom = 0;
-	uint16_t sectorNumTo = 0;
+//	uint16_t sectorNumTo = 0;
 	char *ptr = reciveUARTbuf;
 	uint8_t command = 0;
 
@@ -568,8 +580,10 @@ void parseNewCommandAndData(void){
 	else if(*ptr == ' '){
 		ptr++;
 		printf("\r\n");
-		flashWriteDataToSector(sectorNumFrom, START_ADDRESS, ptr);
+		if (command == WRITE){
+			flashWriteDataToSector(sectorNumFrom, START_ADDRESS, ptr);
 		return;
+		}
 	}
 	printf(errorMessage);
 }
@@ -616,8 +630,8 @@ int main(void)
   printf("\r\n- To execute command via console use following format:\r\n"
 		 "- [read/write/erase] [line/all/TimeCapsule] [0-511] [<text> (max 4092 symbols)]\r\n"
 		 "- Examples: \"read line 20\", \"write line 70 Hello, world!\", \"erase all\",\r\n"
-		 "-           \"erase line 100\", \"read/write/erase Time Capsule\"\r\n"
-		 "- INFO: the \"read all\" command will execute reading of WHOLE chip memory and will take a while\r\n"
+		 "-           \"erase line 100\", \"read/write/erase TimeCapsule\"\r\n"
+		 "- CATION: the \"read all\" command will execute reading of WHOLE chip memory and will take a while\r\n"
 		 "- To terminate any long operation press any key or button on board\r\n"
 		 "- - - - - - - - - - - - - - - - - - - - - - - - -\r\n"
 		 "- To read Time Capsule via board buttons: press <DOWN> button\r\n"

@@ -60,13 +60,13 @@
 	* [read/write/erase] [line/all/TimeCapsule] [0-511] [<text> (max 4092 symbols)]  
 	* Examples: "read line 20", "write line 70 Hello, world!", "erase all",  
 	* "erase line 100", "read/write/erase Time Capsule"  
-	* INFO: the "read all" command will execute reading of WHOLE chip memory and will take a while  
+	* CATION: the "read all" command will execute reading of WHOLE chip memory and will take a while  
 	* to terminate any long operation press any key or button on board  
 	* to read data from flash memory: press <DOWN> button  
 	* to erase whole flash memory: press <CENTER/OK> button  
 	* to write Time Capsule to flash memory: press <CENTER/OK> button  
 	*  
-	* still in developing. TODO: make "read" command capable of reading predefined data length. Create library.   
+	* still in developing. TODO: make comments, make "read" command capable of reading predefined data length. Create library.   
 	   
 ## **END**  
 
